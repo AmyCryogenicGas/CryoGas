@@ -1,0 +1,489 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#9a9c9e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Cylinder Lookup</title>
+<link rel="manifest" href="manifest.json">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Roboto+Mono:wght@500&display=swap">
+<style>
+:root{
+  --bg:#f6f7f8; --card:#fff; --fg:#1f2326; --muted:#80868b; --rule:#d5d9dc;
+  --bar:#9a9c9e; --bar-fg:#fff; --blue:#438bdc; --blue-deep:#16294a; --btn:#3d7fd6;
+  --sage:#8fa98c; --sage-soft:#e7eee5; --brass:#b2843b; --brass-soft:#f4eadb; --danger:#b3412f; --ok:#2f7a4a;
+  --sans:"Roboto",-apple-system,"Segoe UI",Helvetica,Arial,sans-serif; --mono:"Roboto Mono",ui-monospace,Menlo,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#121416; --card:#1c1f22; --fg:#e8eaec; --muted:#9aa0a6; --rule:#33383c; --bar:#3a3d40; --blue:#2f6fbf; --blue-deep:#0b1628; --btn:#4f8fe0;
+  --sage:#9fbb9b; --sage-soft:#26302a; --brass:#d3a55c; --brass-soft:#2e271c; --danger:#e07a68; --ok:#6cc08b; color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--fg);font:16px/1.4 var(--sans);padding-bottom:calc(120px + env(safe-area-inset-bottom,0px))}
+.topbar{position:sticky;top:0;z-index:5;background:var(--bar);color:var(--bar-fg);display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;
+  padding:calc(12px + env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) 12px max(16px,env(safe-area-inset-left,0px))}
+.topbar h1{margin:0;font-size:1.2rem;font-weight:500;text-align:center;white-space:nowrap}
+.pill{font:inherit;font-size:.95rem;border:1px solid rgba(0,0,0,.15);background:var(--btn);color:#0d1b2e;border-radius:999px;padding:7px 16px;cursor:pointer;justify-self:start}
+.pill.right{justify-self:end}
+.wrap{max-width:560px;margin:0 auto;padding:20px max(16px,env(safe-area-inset-right,0px)) 20px max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:18px}
+.card{background:var(--card);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.row{padding:14px 20px;border-bottom:1px solid var(--rule)}
+.row:last-child{border-bottom:0}
+.lbl{color:var(--muted);font-size:.9rem}
+.val{font-size:1.15rem;margin-top:3px;overflow-wrap:anywhere}
+.big{font-size:2.3rem;letter-spacing:.02em;font-variant-numeric:tabular-nums;line-height:1.1}
+.rowhead{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.edit{font:inherit;font-size:.85rem;color:var(--blue);background:none;border:0;padding:0;cursor:pointer;text-decoration:underline}
+.tap{display:flex;justify-content:space-between;align-items:center;cursor:pointer;font:inherit;font-size:1.2rem;background:none;border:0;border-bottom:1px solid var(--rule);width:100%;text-align:left;color:var(--fg);padding:16px 20px}
+.grade{display:inline-flex;align-items:center;gap:6px;background:var(--sage-soft);border-radius:4px;padding:2px 8px;font-size:.8rem;margin-top:6px}
+.grade i{width:10px;height:10px;border-radius:50%;background:var(--sage)}
+h2{font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 -8px;font-weight:500}
+.empty{padding:22px 20px;color:var(--muted)}
+.btns{display:flex;gap:10px;flex-wrap:wrap}
+.primary{font:inherit;font-weight:500;background:var(--btn);color:#fff;border:0;border-radius:6px;padding:12px 18px;cursor:pointer}
+.primary:disabled{opacity:.55}
+.ghost{font:inherit;background:none;border:1px solid var(--rule);color:var(--fg);border-radius:6px;padding:11px 18px;cursor:pointer;text-decoration:none;display:inline-block}
+.note{font-size:.85rem;color:var(--muted);margin:0}
+.msg{font-size:.9rem;margin:0}.msg.err{color:var(--danger)}.msg.ok{color:var(--ok)}
+form.card,.pad{padding:18px 20px;display:flex;flex-direction:column;gap:14px}
+.f{display:flex;flex-direction:column;gap:5px;min-width:0}
+.f label{font-size:.85rem;color:var(--muted)}
+.f input,.f select,.f textarea{font:inherit;padding:10px 12px;border:1px solid var(--rule);border-radius:4px;background:var(--bg);color:var(--fg);width:100%}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:420px){.two{grid-template-columns:1fr}}
+.list button{all:unset;box-sizing:border-box;display:grid;grid-template-columns:1fr auto;gap:2px 12px;width:100%;padding:14px 20px;border-bottom:1px solid var(--rule);cursor:pointer}
+.list button:last-child{border-bottom:0}
+.list .who{font-weight:500}.list .bc{font-family:var(--mono);font-size:.85rem;color:var(--muted)}.list .meta{grid-column:1/-1;color:var(--muted);font-size:.85rem}
+.tagcard{position:relative;background:var(--brass-soft);border:1px solid var(--brass);border-radius:14px;padding:24px 22px 18px;display:flex;flex-direction:column;gap:10px}
+.tagcard .from{font-family:var(--mono);font-size:.75rem;letter-spacing:.06em;text-transform:uppercase;color:var(--brass)}
+.tagcard blockquote{margin:0;font-size:1.15rem;overflow-wrap:anywhere;white-space:pre-wrap}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{font:inherit;font-size:.85rem;border:1px solid var(--rule);background:var(--bg);color:var(--fg);border-radius:999px;padding:6px 12px;cursor:pointer}
+.gasopt{display:flex;flex-direction:column;gap:8px}
+.gasopt label{display:flex;gap:12px;align-items:flex-start;border:1px solid var(--rule);border-radius:6px;padding:12px;cursor:pointer}
+.gasopt small{display:block;color:var(--muted)}
+.hist{list-style:none;margin:0;padding:0}
+.hist li{padding:14px 20px;border-bottom:1px solid var(--rule);display:flex;flex-direction:column;gap:3px}
+.hist li:last-child{border-bottom:0}
+.hist .when{font-size:.8rem;color:var(--muted)}
+.sheet-bg{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:20;display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:var(--card);width:100%;max-width:560px;border-radius:14px 14px 0 0;padding:20px 20px calc(24px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:14px;max-height:90vh;overflow:auto}
+.sheet h3{margin:0;font-size:1.15rem;font-weight:500}
+.bottom{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--blue);height:calc(84px + env(safe-area-inset-bottom,0px));padding-bottom:env(safe-area-inset-bottom,0px);display:flex;align-items:center;padding-left:24px}
+.scanbtn{position:absolute;left:50%;top:-28px;transform:translateX(-50%);width:84px;height:84px;border-radius:6px;background:var(--blue-deep);border:0;cursor:pointer;display:grid;place-items:center}
+.kbd{background:none;border:0;cursor:pointer;padding:6px}
+.acct{font-size:.85rem;color:var(--muted);text-align:center}
+.acct button{font:inherit;color:var(--blue);background:none;border:0;text-decoration:underline;cursor:pointer}
+.code{font-family:var(--mono);font-size:1.4rem;letter-spacing:.15em}
+.qrbox{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.qrbox img{width:140px;height:140px;image-rendering:pixelated;border:1px solid var(--rule);background:#fff}
+:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <button class="pill" id="backBtn" hidden>Back</button>
+  <h1 id="barTitle">Wireless Lookup</h1>
+  <button class="pill right" id="doneBtn" hidden>Done</button>
+</header>
+<main class="wrap" id="app"><div class="card"><div class="empty">Loading…</div></div></main>
+<nav class="bottom" aria-label="Lookup">
+  <button class="kbd" id="kbdBtn" aria-label="Type a barcode"><svg width="44" height="30" viewBox="0 0 44 30"><rect x="1.5" y="1.5" width="41" height="27" rx="3" fill="none" stroke="#fff" stroke-width="2.5"/><g fill="#fff"><rect x="7" y="7" width="4" height="3"/><rect x="13" y="7" width="4" height="3"/><rect x="19" y="7" width="4" height="3"/><rect x="25" y="7" width="4" height="3"/><rect x="31" y="7" width="4" height="3"/><rect x="7" y="13" width="4" height="3"/><rect x="13" y="13" width="4" height="3"/><rect x="19" y="13" width="4" height="3"/><rect x="25" y="13" width="4" height="3"/><rect x="31" y="13" width="4" height="3"/><rect x="11" y="19" width="22" height="3"/></g></svg></button>
+  <button class="scanbtn" id="scanBtn" aria-label="Look up a cylinder"><svg width="54" height="46" viewBox="0 0 54 46"><g fill="none" stroke="#fff" stroke-width="3"><path d="M2 12V2h10M42 2h10v10M52 34v10H42M12 44H2V34"/></g><g fill="#fff"><rect x="10" y="9" width="3" height="28"/><rect x="15" y="9" width="2" height="28"/><rect x="19" y="9" width="4" height="28"/><rect x="25" y="9" width="2" height="28"/><rect x="29" y="9" width="3" height="28"/><rect x="34" y="9" width="2" height="28"/><rect x="38" y="9" width="4" height="28"/></g></svg></button>
+</nav>
+<div id="sheetRoot"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, onSnapshot, query, where, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { firebaseConfig, ADMIN_EMAIL, BRAND } from "./config.js";
+import { SEED } from "./seed.js";
+
+const fb = initializeApp(firebaseConfig);
+const db = getFirestore(fb);
+const auth = getAuth(fb);
+
+const GASES = { NI:{name:"Nitrogen",un:"Un1066"}, AR:{name:"Argon",un:"Un1006"}, HE:{name:"Helium",un:"Un1046"} };
+const GROUP = "G580.200";
+const gasInfo = k => { const g = GASES[k]||GASES.NI; return {...g, cat:`${g.name.toUpperCase()}-PREPURIFIED`, code:`${k}.PP-${GROUP}`, desc:`'200' ${g.name} Compressed 2.2 ${g.un}`}; };
+const $ = s => document.querySelector(s);
+const app = $("#app");
+const esc = s => String(s ?? "").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt = iso => { try { return new Date(iso).toLocaleString(undefined,{month:"short",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit"}); } catch(e){ return iso; } };
+const ls = { get:k=>{try{return localStorage.getItem(k)}catch(e){return null}}, set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}, del:k=>{try{localStorage.removeItem(k)}catch(e){}} };
+
+let me = null, isAdmin = false;
+let view = {name:"home"};
+let current = null, unsubCyl = null;
+let all = [], unsubAll = null;
+
+/* ---------- routing: #<barcode> ---------- */
+function route(){
+  const h = location.hash.replace(/^#/,"").replace(/^c/,"");
+  view = /^\d{4,14}$/.test(h) ? {name:"cyl", bc:h} : {name:"home"};
+  watchCylinder();
+  render();
+}
+window.addEventListener("hashchange", route);
+function go(v){
+  if (v.name==="cyl" && location.hash !== "#"+v.bc){ location.hash = v.bc; return; }
+  if (v.name==="home" && location.hash){ history.replaceState(null,"",location.pathname); }
+  view = v; watchCylinder(); render(); scrollTo(0,0);
+}
+function watchCylinder(){
+  const bc = view.bc;
+  if (current && current.barcode===bc && unsubCyl) return;
+  if (unsubCyl){ unsubCyl(); unsubCyl=null; }
+  current = null;
+  if (!bc) return;
+  current = {loading:true, barcode:bc};
+  unsubCyl = onSnapshot(doc(db,"cylinders",bc), s => {
+    current = s.exists() ? {...s.data(), barcode:bc} : {missing:true, barcode:bc};
+    if (!$("#sheetRoot").innerHTML) render();
+  }, () => { current = {missing:true, barcode:bc}; render(); });
+}
+function watchAll(){
+  if (unsubAll){ unsubAll(); unsubAll=null; }
+  if (!isAdmin) { all=[]; return; }
+  unsubAll = onSnapshot(collection(db,"cylinders"), s => { all = s.docs.map(d=>({...d.data(), barcode:d.id})); if (view.name==="home" && !$("#sheetRoot").innerHTML) render(); });
+}
+
+/* ---------- bars ---------- */
+function setBar(t, back, done){ $("#barTitle").textContent=t; $("#backBtn").hidden=!back; $("#doneBtn").hidden=!done; }
+$("#backBtn").onclick = () => { if (view.name==="hist"||view.name==="label") go({name:"cyl",bc:view.bc}); else go({name:"home"}); };
+$("#doneBtn").onclick = () => go({name:"home"});
+$("#scanBtn").onclick = $("#kbdBtn").onclick = openLookup;
+
+/* ---------- render ---------- */
+function render(){
+  if (view.name==="cyl") return renderCyl();
+  if (view.name==="hist") return renderHist();
+  if (view.name==="label") return renderLabel();
+  renderHome();
+}
+function acctLine(){
+  return `<p class="acct">${me ? `Signed in as ${esc(me.email||me.displayName||"you")} · <button id="soBtn">Sign out</button>` : `<button id="siBtn">Sign in</button>`}</p>`;
+}
+function wireAcct(){
+  const so=$("#soBtn"); if (so) so.onclick=()=>signOut(auth);
+  const si=$("#siBtn"); if (si) si.onclick=()=>openSignIn(null);
+}
+function renderHome(){
+  setBar("Wireless Lookup", false, false);
+  let h = `<div class="card pad"><p class="note" style="font-size:1rem;color:var(--fg)">Scan the QR code on a ${esc(BRAND)} cylinder with your phone camera, or tap the barcode button below to type its number.</p></div>`;
+  if (isAdmin){
+    const rows=[...all].sort((a,b)=>(a.owner||"").localeCompare(b.owner||""));
+    h += `<h2>Cylinders in the field</h2><div class="card list">${rows.length ? rows.map(c=>`<button data-bc="${esc(c.barcode)}"><span class="who">${esc(c.owner)}</span><span class="bc">${esc(c.barcode)}</span><span class="meta">${esc(gasInfo(c.gas).name)} PP · ${esc(c.location||"No location")} · ${c.ownerUid?"registered":"not registered"}</span></button>`).join("") : `<div class="empty">No cylinders yet. Add your first one below.</div>`}</div>`;
+    const missingSeed=SEED.filter(s=>!all.find(c=>c.barcode===s.barcode));
+    if (missingSeed.length) h += `<div class="card pad"><strong>Starter cylinders</strong><p class="note">${missingSeed.length} cylinders from your first batch aren't loaded yet.</p><button class="primary" id="seedBtn">Load them</button><p class="msg" id="seedMsg"></p></div>`;
+    h += fillForm();
+  }
+  h += acctLine();
+  app.innerHTML = h;
+  app.querySelectorAll(".list button[data-bc]").forEach(b=>b.onclick=()=>go({name:"cyl",bc:b.dataset.bc}));
+  if (isAdmin) wireFill();
+  const sb=$("#seedBtn");
+  if (sb) sb.onclick=async()=>{
+    const m=$("#seedMsg"); m.className="msg"; m.textContent="Loading…"; sb.disabled=true;
+    try{
+      const b=writeBatch(db), at=new Date().toISOString();
+      for (const sd of SEED.filter(x=>!all.find(c=>c.barcode===x.barcode))){
+        const code=newClaim();
+        b.set(doc(db,"claims",`${sd.barcode}-${code}`),{barcode:sd.barcode, code, createdAt:at});
+        const {barcode, ...rest}=sd;
+        b.set(doc(db,"cylinders",barcode),{...rest, status:"Delivered", ownerUid:null, claimCode:null, giftFrom:null, giftMessage:null,
+          history:[{at, text:`Filled with ${sd.contents}, ${GASES[sd.gas].name} style (lot ${sd.lot}) and delivered to ${sd.location}`}], createdAt:at, updatedAt:at});
+      }
+      await b.commit();
+    }catch(e){ m.className="msg err"; m.textContent="Couldn't load them. Check you're signed in as the filler and the database rules are published."; sb.disabled=false; }
+  };
+  wireAcct();
+}
+const canEdit = c => isAdmin || (me && c.ownerUid===me.uid);
+const field = (l,v) => `<div class="row"><div class="lbl">${l}</div><div class="val">${v}</div></div>`;
+
+function renderCyl(){
+  setBar("Wireless Lookup", true, true);
+  const c = current;
+  if (!c || c.loading){ app.innerHTML=`<div class="card"><div class="empty">Looking up cylinder…</div></div>`; return; }
+  if (c.missing){ app.innerHTML=`<div class="card"><div class="empty">No cylinder with barcode ${esc(c.barcode)} is in the system. Check the number under the bars and try again.</div></div>`+acctLine(); wireAcct(); return; }
+  const g = gasInfo(c.gas), ed = canEdit(c), unclaimed = !c.ownerUid;
+  let h = "";
+  if (unclaimed && c.giftMessage){
+    h += `<div class="tagcard"><span class="from">Delivery note${c.giftFrom?` from ${esc(c.giftFrom)}`:""}</span><blockquote>${esc(c.giftMessage)}</blockquote>${c.giftFrom?`<strong>— ${esc(c.giftFrom)}</strong>`:""}</div>`;
+  }
+  if (unclaimed && !isAdmin){
+    h += `<div class="card pad"><strong>This cylinder isn't registered yet.</strong><p class="note">If it's yours, register it with the claim code tucked inside. Then only you can move it, refill it or change its style.</p><button class="primary" id="claimBtn">Register this cylinder</button></div>`;
+  }
+  h += `<div class="card">
+    <div class="row"><div class="lbl">Barcode</div><div class="val big">${esc(c.barcode)}</div><div class="lbl" style="margin-top:10px">Serial Number</div><div class="val">${esc(c.serial)}</div></div>
+    <button class="tap" id="histBtn">History <span style="color:var(--muted)">›</span></button>
+    <div class="row"><div class="rowhead"><div class="lbl">Class</div>${ed?`<button class="edit" id="gasBtn">Change style</button>`:""}</div><div class="val">${g.cat} / ${GROUP} / ${g.code}</div><span class="grade"><i></i>Sage green · Pre-purified grade</span></div>
+    ${field("Product Code", g.code)}
+    ${field("Description", esc(g.desc))}
+    <div class="row"><div class="rowhead"><div class="lbl">Contents</div>${ed?`<button class="edit" id="fillBtn">Refill</button>`:""}</div><div class="val">Filled with ${esc(c.contents||"a surprise inside")}</div></div>
+    ${field("Ownership", esc(c.owner))}
+    <div class="row"><div class="rowhead"><div class="lbl">Branch</div>${ed?`<button class="edit" id="moveBtn">Move</button>`:""}</div><div class="val">${esc(c.location||"Not Set")} (Customer)</div></div>
+    ${field("Status", esc(c.status||"Delivered"))}
+    ${field("Lot Number", esc(c.lot||"Not Set"))}
+    ${field("Volume/Weight","Not Set")}${field("Capacity","200")}${field("Cylinder Material","STEEL")}${field("Retest Date","Not Set")}${field("Valve Type","580")}
+  </div>`;
+  if (ed) h += `<div class="btns"><button class="primary" id="moveBtn2">Move cylinder</button><button class="ghost" id="fillBtn2">Refill</button>${isAdmin?`<button class="ghost" id="labelBtn">Label &amp; claim code</button>`:""}</div>`;
+  else if (!unclaimed) h += `<p class="note">Only ${esc(c.owner)} and the filler can change this cylinder.${me?"":" If this is yours, sign in below."}</p>`;
+  h += acctLine();
+  app.innerHTML = h;
+  $("#histBtn").onclick=()=>go({name:"hist",bc:c.barcode});
+  if ($("#claimBtn")) $("#claimBtn").onclick=()=>openClaim(c);
+  if (ed){
+    $("#moveBtn").onclick=$("#moveBtn2").onclick=()=>openMove(c);
+    $("#gasBtn").onclick=()=>openGas(c);
+    $("#fillBtn").onclick=$("#fillBtn2").onclick=()=>openFill(c);
+    if (isAdmin) $("#labelBtn").onclick=()=>go({name:"label",bc:c.barcode});
+  }
+  wireAcct();
+}
+function renderHist(){
+  setBar("History", true, false);
+  const c=current; if(!c||c.missing||c.loading){ app.innerHTML=`<div class="card"><div class="empty">Loading…</div></div>`; return; }
+  const hist=[...(c.history||[])].reverse();
+  app.innerHTML=`<h2>${esc(c.owner)} · ${esc(c.barcode)}</h2><div class="card"><ul class="hist">${hist.length?hist.map(x=>`<li><span class="when">${esc(fmt(x.at))}</span><span>${esc(x.text)}</span></li>`).join(""):`<li>No history yet.</li>`}</ul></div>`;
+}
+
+/* ---------- sheets ---------- */
+function sheet(inner, mount){
+  const root=$("#sheetRoot");
+  root.innerHTML=`<div class="sheet-bg" id="sbg"><div class="sheet" role="dialog" aria-modal="true">${inner}</div></div>`;
+  const close=()=>{ root.innerHTML=""; render(); };
+  $("#sbg").addEventListener("click",e=>{ if(e.target.id==="sbg") close(); });
+  mount && mount(close);
+}
+function openLookup(){
+  sheet(`<h3>Look up a cylinder</h3><p class="note">Point your phone camera at the QR code to open a cylinder straight away, or type the number under the barcode.</p>
+    <div class="f"><label for="lkBc">Barcode</label><input id="lkBc" inputmode="numeric" maxlength="14" autocomplete="off"></div><p class="msg" id="lkMsg"></p>
+    <div class="btns"><button class="primary" id="lkGo">Look up</button><button class="ghost" id="lkX">Cancel</button></div>`, close=>{
+    const i=$("#lkBc"); i.focus();
+    const goL=()=>{ const v=i.value.replace(/\D/g,""); if(!v){ $("#lkMsg").className="msg err"; $("#lkMsg").textContent="Type the barcode number."; return; } $("#sheetRoot").innerHTML=""; go({name:"cyl",bc:v}); };
+    i.addEventListener("keydown",e=>{ if(e.key==="Enter") goL(); }); $("#lkGo").onclick=goL; $("#lkX").onclick=close;
+  });
+}
+async function saveChange(c, patch, text, msgEl, close){
+  const at=new Date().toISOString();
+  msgEl.className="msg"; msgEl.textContent="Saving…";
+  try{
+    await updateDoc(doc(db,"cylinders",c.barcode), {...patch, history:[...(c.history||[]), {at,text}].slice(-200), updatedAt:at});
+    close();
+  }catch(e){ msgEl.className="msg err"; msgEl.textContent = e.code==="permission-denied" ? "Only the cylinder's owner and the filler can change it. Sign in with the account you registered with." : "Couldn't save. Check your connection and try again."; }
+}
+function textSheet(title, note, label, placeholder, chips, onSave){
+  sheet(`<h3>${title}</h3><p class="note">${note}</p><div class="f"><label for="tIn">${label}</label><input id="tIn" maxlength="60" placeholder="${esc(placeholder)}" autocomplete="off"></div>
+    <div class="chips">${chips.map(x=>`<button class="chip">${esc(x)}</button>`).join("")}</div><p class="msg" id="tMsg"></p>
+    <div class="btns"><button class="primary" id="tSave">Save</button><button class="ghost" id="tX">Cancel</button></div>`, close=>{
+    const i=$("#tIn"); i.focus();
+    document.querySelectorAll(".chip").forEach(b=>b.onclick=()=>{ i.value=b.textContent; i.focus(); });
+    $("#tX").onclick=close;
+    $("#tSave").onclick=()=>{ const v=i.value.trim(); if(!v){ $("#tMsg").className="msg err"; $("#tMsg").textContent="Type something first."; return; } onSave(v, $("#tMsg"), close); };
+  });
+}
+function openMove(c){
+  const first=(c.owner||"").split(/\s+/)[0], p=first?(/s$/i.test(first)?first+"'":first+"'s"):"";
+  textSheet(`Move cylinder ${esc(c.barcode)}`, `Now at: <strong>${esc(c.location||"Not Set")}</strong>`, "New location", p?`${p} Truck`:"Truck",
+    p?[`${p} Desk`,`${p} Truck`,`${p} Office`,"Home"]:["Desk","Truck","Home"],
+    (v,m,close)=>{ if(v===c.location) return close(); saveChange(c,{location:v},`Moved from ${c.location||"Not Set"} to ${v}`,m,close); });
+}
+function openFill(c){
+  textSheet("Refill", "Opened your surprise, or keeping something new inside? Log what it's filled with now.", "Filled with", "peanut M&Ms",
+    ["candy","snacks","pens & markers","spare change","nothing (empty)"],
+    (v,m,close)=>{ if(v===c.contents) return close(); saveChange(c,{contents:v},`Refilled: ${v} (was ${c.contents||"a surprise inside"})`,m,close); });
+}
+function openGas(c){
+  sheet(`<h3>Change style</h3><p class="note">Changes the cylinder's class and label. All three use the 580 valve.</p>
+    <div class="gasopt">${Object.keys(GASES).map(k=>{const g=gasInfo(k);return `<label><input type="radio" name="gas" value="${k}" ${k===c.gas?"checked":""}><span>${g.cat}<small>${g.code} · ${g.un}</small></span></label>`;}).join("")}</div>
+    <p class="msg" id="gMsg"></p><div class="btns"><button class="primary" id="gSave">Save</button><button class="ghost" id="gX">Cancel</button></div>`, close=>{
+    $("#gX").onclick=close;
+    $("#gSave").onclick=()=>{ const k=(document.querySelector('input[name="gas"]:checked')||{}).value; if(!k||k===c.gas) return close();
+      saveChange(c,{gas:k},`Style changed from ${gasInfo(c.gas).name} to ${gasInfo(k).name}`,$("#gMsg"),close); };
+  });
+}
+
+/* ---------- sign in ---------- */
+function openSignIn(after){
+  if (after) ls.set("pendingClaim", JSON.stringify(after));
+  sheet(`<h3>Sign in</h3><p class="note">We'll email you a sign-in link. No password needed.</p>
+    <div class="f"><label for="siEmail">Email</label><input id="siEmail" type="email" autocomplete="email" value="${esc(ls.get("emailForSignIn")||"")}"></div>
+    <p class="msg" id="siMsg"></p>
+    <div class="btns"><button class="primary" id="siSend">Email me a link</button><button class="ghost" id="siG">Use Google instead</button></div>
+    <button class="ghost" id="siX">Cancel</button>`, close=>{
+    $("#siX").onclick=()=>{ ls.del("pendingClaim"); close(); };
+    $("#siSend").onclick=async()=>{
+      const em=$("#siEmail").value.trim(), m=$("#siMsg");
+      if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){ m.className="msg err"; m.textContent="Enter a valid email address."; return; }
+      m.className="msg"; m.textContent="Sending…";
+      try{
+        await sendSignInLinkToEmail(auth, em, {url: location.origin + location.pathname + (view.bc?`?c=${view.bc}`:""), handleCodeInApp:true});
+        ls.set("emailForSignIn", em);
+        m.className="msg ok"; m.textContent=`Check ${em} for the sign-in link. Open it on this phone.`;
+      }catch(e){ m.className="msg err"; m.textContent="Couldn't send the link. Check the address and try again."; }
+    };
+    $("#siG").onclick=async()=>{ try{ await signInWithPopup(auth, new GoogleAuthProvider()); $("#sheetRoot").innerHTML=""; finishPending(); }catch(e){ $("#siMsg").className="msg err"; $("#siMsg").textContent="Google sign-in didn't finish. Try the email link instead."; } };
+  });
+}
+async function completeEmailLink(){
+  if (!isSignInWithEmailLink(auth, location.href)) return;
+  const em = ls.get("emailForSignIn");
+  const params = new URLSearchParams(location.search); const bc = params.get("c");
+  const finish = async (email) => {
+    try{ await signInWithEmailLink(auth, email, location.href); ls.del("emailForSignIn"); }
+    catch(e){ app.insertAdjacentHTML("afterbegin", `<p class="msg err">That sign-in link expired or was already used. Request a new one.</p>`); }
+    history.replaceState(null,"", location.pathname + (bc?`#${bc}`:""));
+    route(); finishPending();
+  };
+  if (em) return finish(em);
+  sheet(`<h3>Confirm your email</h3><p class="note">You opened the link on a different device. Type the email you used.</p>
+    <div class="f"><label for="ceEmail">Email</label><input id="ceEmail" type="email"></div><button class="primary" id="ceGo">Sign in</button>`, ()=>{
+    $("#ceGo").onclick=()=>{ const v=$("#ceEmail").value.trim(); if(v){ $("#sheetRoot").innerHTML=""; finish(v); } };
+  });
+}
+
+/* ---------- claim ---------- */
+function openClaim(c){
+  sheet(`<h3>Register cylinder ${esc(c.barcode)}</h3>
+    <p class="note">The claim code is on the card inside the cylinder.</p>
+    <div class="f"><label for="clCode">Claim code</label><input id="clCode" class="code" maxlength="8" autocomplete="off" autocapitalize="characters" spellcheck="false"></div>
+    <div class="f"><label for="clName">Your name (shows as Ownership)</label><input id="clName" maxlength="40" value="${esc(c.owner||"")}" autocomplete="name"></div>
+    <div class="f"><label for="clLoc">Where will it live?</label><input id="clLoc" maxlength="60" value="${esc(c.location||"")}"></div>
+    <p class="msg" id="clMsg"></p>
+    <div class="btns"><button class="primary" id="clGo">Register</button><button class="ghost" id="clX">Cancel</button></div>`, close=>{
+    $("#clX").onclick=close;
+    $("#clGo").onclick=()=>{
+      const code=$("#clCode").value.trim().toUpperCase().replace(/[^A-Z0-9]/g,""), name=$("#clName").value.trim(), loc=$("#clLoc").value.trim(), m=$("#clMsg");
+      m.className="msg err";
+      if(code.length<4){ m.textContent="Enter the claim code from inside the cylinder."; return; }
+      if(!name){ m.textContent="Enter your name."; return; }
+      const pending={bc:c.barcode, code, name, loc};
+      if(!me){ $("#sheetRoot").innerHTML=""; return openSignIn(pending); }
+      doClaim(pending, m, close);
+    };
+  });
+}
+async function doClaim(p, m, close){
+  const ref=doc(db,"cylinders",p.bc);
+  try{
+    const s=await getDoc(ref); if(!s.exists()) throw {code:"not-found"};
+    const c=s.data(); if(c.ownerUid){ if(m){ m.className="msg err"; m.textContent="This cylinder is already registered."; } return; }
+    const at=new Date().toISOString();
+    const loc = p.loc || c.location || "";
+    const hist=[...(c.history||[]), {at, text:`Registered by ${p.name}${loc && loc!==c.location?`, moved to ${loc}`:""}`}];
+    await updateDoc(ref,{ownerUid:me.uid, owner:p.name, location:loc, claimCode:p.code, history:hist, updatedAt:at});
+    ls.del("pendingClaim"); if(close) close(); else render();
+  }catch(e){
+    ls.del("pendingClaim");
+    const txt = e.code==="permission-denied" ? "That claim code doesn't match this cylinder. Check the card inside and try again." : "Couldn't register. Check your connection and try again.";
+    if(m){ m.className="msg err"; m.textContent=txt; } else app.insertAdjacentHTML("afterbegin", `<p class="msg err">${txt}</p>`);
+  }
+}
+function finishPending(){
+  const raw=ls.get("pendingClaim"); if(!raw||!me) return;
+  try{ const p=JSON.parse(raw); doClaim(p,null,null); }catch(e){ ls.del("pendingClaim"); }
+}
+
+/* ---------- filler (admin) ---------- */
+const rnd=n=>Array.from({length:n},(_,i)=>i===0?1+Math.floor(Math.random()*9):Math.floor(Math.random()*10)).join("");
+const ALPHA="ACDEFGHJKMNPQRTUVWXY34679";
+const newClaim=()=>Array.from({length:6},()=>ALPHA[Math.floor(Math.random()*ALPHA.length)]).join("");
+const todayISO=()=>{ const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
+const lotFrom=(iso,ini)=>{ const m=(iso||"").match(/^(\d{4})-(\d{2})-(\d{2})$/); return m?`${m[2]}${m[3]}${m[1].slice(2)}${(ini||"").toUpperCase()}`:""; };
+function fillForm(){
+  return `<h2>Fill a new cylinder</h2><form class="card" id="fill" novalidate>
+    <div class="f"><label for="fOwner">Recipient (Ownership)</label><input id="fOwner" maxlength="40"></div>
+    <div class="two"><div class="f"><label for="fBc">Barcode</label><input id="fBc" inputmode="numeric" maxlength="14"></div>
+      <div class="f"><label for="fSn">Serial number</label><input id="fSn" maxlength="12"></div></div>
+    <div class="two"><div class="f"><label for="fGas">Style</label><select id="fGas">${Object.keys(GASES).map(k=>`<option value="${k}">${gasInfo(k).cat}</option>`).join("")}</select></div>
+      <div class="f"><label for="fLoc">Starting location</label><input id="fLoc" maxlength="60"></div></div>
+    <div class="f"><label for="fFill">Filled with</label><input id="fFill" maxlength="60" value="a surprise inside"></div>
+    <div class="two"><div class="f"><label for="fDate">Fill or sold date</label><input id="fDate" type="date"></div>
+      <div class="f"><label for="fIni">Filler initials</label><input id="fIni" maxlength="4"></div></div>
+    <div class="f"><label for="fLot">Lot number</label><input id="fLot" maxlength="20"></div>
+    <div class="two"><div class="f"><label for="fFrom">Gift from (optional)</label><input id="fFrom" maxlength="40"></div><div></div></div>
+    <div class="f"><label for="fMsg">Gift message (optional, shows before they register)</label><textarea id="fMsg" rows="3" maxlength="400"></textarea></div>
+    <p class="msg" id="fErr"></p><button class="primary" type="submit" id="fSave">Add cylinder</button></form>`;
+}
+function wireFill(){
+  const bcIn=$("#fBc"); bcIn.value="0"+rnd(8);
+  $("#fDate").value=todayISO(); $("#fIni").value=ls.get("fillerInitials")||"";
+  let lotT=false; const sync=()=>{ if(!lotT) $("#fLot").value=lotFrom($("#fDate").value,$("#fIni").value); }; sync();
+  $("#fDate").oninput=$("#fIni").oninput=sync; $("#fLot").oninput=()=>{lotT=true;};
+  $("#fOwner").oninput=()=>{ const l=$("#fLoc"); if(!l.dataset.t){ const f=$("#fOwner").value.trim().split(/\s+/)[0]; l.value=f?`${/s$/i.test(f)?f+"'":f+"'s"} Desk`:""; } };
+  $("#fLoc").oninput=e=>{ e.target.dataset.t="1"; };
+  $("#fill").addEventListener("submit", async e=>{
+    e.preventDefault(); const m=$("#fErr"); m.className="msg err";
+    const owner=$("#fOwner").value.trim(), bc=bcIn.value.replace(/\D/g,""), sn=$("#fSn").value.trim();
+    if(!owner) return m.textContent="Enter the recipient's name.";
+    if(bc.length<4) return m.textContent="Barcode needs at least 4 digits.";
+    if(all.some(c=>c.barcode===bc)) return m.textContent="That barcode is already in use.";
+    if(!sn) return m.textContent="Enter a serial number.";
+    ls.set("fillerInitials",$("#fIni").value.trim().toUpperCase());
+    const at=new Date().toISOString(), gas=$("#fGas").value, contents=$("#fFill").value.trim()||"a surprise inside", loc=$("#fLoc").value.trim(), lot=$("#fLot").value.trim();
+    const code=newClaim();
+    $("#fSave").disabled=true; m.className="msg"; m.textContent="Saving…";
+    try{
+      await setDoc(doc(db,"claims",`${bc}-${code}`),{barcode:bc, code, createdAt:at});
+      await setDoc(doc(db,"cylinders",bc),{serial:sn, gas, owner, location:loc, contents, lot, fillDate:$("#fDate").value, status:"Delivered",
+        ownerUid:null, claimCode:null, giftFrom:$("#fFrom").value.trim()||null, giftMessage:$("#fMsg").value.trim()||null,
+        history:[{at, text:`Filled with ${contents}, ${GASES[gas].name} style (lot ${lot||"not set"}) and delivered to ${loc||"Not Set"}`}], createdAt:at, updatedAt:at});
+      ls.set("lastClaim:"+bc, code);
+      go({name:"label",bc});
+    }catch(err){ m.className="msg err"; m.textContent="Couldn't save the cylinder. Make sure you're signed in as the filler."; $("#fSave").disabled=false; }
+  });
+}
+function qrPng(text, cell){
+  const q=qrcode(0,"M"); q.addData(text); q.make();
+  const n=q.getModuleCount(), quiet=2, size=(n+quiet*2)*cell;
+  const cv=document.createElement("canvas"); cv.width=cv.height=size; const x=cv.getContext("2d");
+  x.fillStyle="#fff"; x.fillRect(0,0,size,size); x.fillStyle="#000";
+  for(let r=0;r<n;r++)for(let c=0;c<n;c++) if(q.isDark(r,c)) x.fillRect((c+quiet)*cell,(r+quiet)*cell,cell,cell);
+  return {url:cv.toDataURL("image/png"), n, inches:(size/300).toFixed(2)};
+}
+async function renderLabel(){
+  setBar("Label", true, false);
+  const c=current; if(!c||c.loading||c.missing){ app.innerHTML=`<div class="card"><div class="empty">Loading…</div></div>`; return; }
+  const link = location.origin + location.pathname + "#" + c.barcode;
+  const qr = qrPng(link, 5);
+  let known=ls.get("lastClaim:"+c.barcode);
+  if(!known && !c.ownerUid){ try{ const qs=await getDocs(query(collection(db,"claims"),where("barcode","==",c.barcode))); known=qs.docs.map(d=>d.data().code).join(", ")||null; }catch(e){} }
+  if(view.name!=="label"||current!==c) return;
+  app.innerHTML=`<h2>${esc(c.owner)} · ${esc(c.barcode)}</h2>
+  <div class="card pad">
+    <div class="qrbox"><img src="${qr.url}" alt="QR code for ${esc(c.barcode)}"><div><strong>QR sticker</strong><p class="note">${qr.inches} × ${qr.inches} in at 300 dpi. Opens ${esc(link)}</p>
+      <p><a class="ghost" download="qr-${esc(c.serial||c.barcode)}-${esc(c.barcode)}.png" href="${qr.url}">Save QR image</a></p></div></div>
+  </div>
+  <div class="card pad"><strong>Claim code</strong>
+    ${c.ownerUid ? `<p class="note">Registered. The code is used up.</p><button class="ghost" id="unclaim">Unregister (new owner)</button>` :
+      `<p class="note">Put this on a little card inside the cylinder. The recipient needs it to register.</p><div class="code" id="codeShow">${known?esc(known):"Hidden"}</div>
+       <button class="ghost" id="newCode">Make a new claim code</button>`}
+    <p class="msg" id="cMsg"></p></div>`;
+  const nc=$("#newCode");
+  if(nc) nc.onclick=async()=>{ const code=newClaim(); const m=$("#cMsg");
+    try{ await setDoc(doc(db,"claims",`${c.barcode}-${code}`),{barcode:c.barcode, code, createdAt:new Date().toISOString()}); ls.set("lastClaim:"+c.barcode,code); $("#codeShow").textContent=code; m.className="msg ok"; m.textContent="New code saved. Older codes still work until the cylinder is registered."; }
+    catch(e){ m.className="msg err"; m.textContent="Couldn't save the code."; } };
+  const un=$("#unclaim");
+  if(un) un.onclick=async()=>{ const m=$("#cMsg");
+    try{ await updateDoc(doc(db,"cylinders",c.barcode),{ownerUid:null, claimCode:null, history:[...(c.history||[]),{at:new Date().toISOString(),text:"Unregistered by the filler"}]}); m.className="msg ok"; m.textContent="Unregistered. Make a new claim code for the next owner."; }
+    catch(e){ m.className="msg err"; m.textContent="Couldn't unregister."; } };
+}
+
+/* ---------- boot ---------- */
+onAuthStateChanged(auth, u=>{
+  me=u; isAdmin = !!(u && u.email && u.emailVerified && u.email.toLowerCase()===ADMIN_EMAIL.toLowerCase());
+  watchAll(); render(); finishPending();
+});
+const qc = new URLSearchParams(location.search).get("c");
+if (qc && !isSignInWithEmailLink(auth, location.href)) { history.replaceState(null,"",location.pathname+"#"+qc); }
+route();
+completeEmailLink();
+</script>
+</body>
+</html>
