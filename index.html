@@ -194,7 +194,8 @@ function renderHome(){
       for (const sd of SEED.filter(x=>!all.find(c=>c.barcode===x.barcode))){
         const code=newClaim();
         b.set(doc(db,"claims",`${sd.barcode}-${code}`),{barcode:sd.barcode, code, createdAt:at});
-        const {barcode, ...rest}=sd;
+        const {barcode, email, ...rest}=sd;
+        if (email) b.set(doc(db,"owners",barcode),{email:email.trim().toLowerCase()});
         b.set(doc(db,"cylinders",barcode),{...rest, status:"Delivered", ownerUid:null, claimCode:null, giftFrom:null, giftMessage:null,
           history:[{at, text:`Filled with ${sd.contents}, ${GASES[sd.gas].name} style (lot ${sd.lot}) and delivered to ${sd.location}`}], createdAt:at, updatedAt:at});
       }
@@ -217,7 +218,7 @@ function renderCyl(){
     h += `<div class="tagcard"><span class="from">Delivery note${c.giftFrom?` from ${esc(c.giftFrom)}`:""}</span><blockquote>${esc(c.giftMessage)}</blockquote>${c.giftFrom?`<strong>— ${esc(c.giftFrom)}</strong>`:""}</div>`;
   }
   if (unclaimed && !isAdmin){
-    h += `<div class="card pad"><strong>This cylinder isn't registered yet.</strong><p class="note">If it's yours, register it with the claim code tucked inside. Then only you can move it, refill it or change its style.</p><button class="primary" id="claimBtn">Register this cylinder</button></div>`;
+    h += `<div class="card pad"><strong>This cylinder isn't registered yet.</strong><p class="note">If it's yours, tap Register. Sign in with the email the filler has on file, or use the claim code tucked inside. Then only you can move it, refill it or change its style.</p><button class="primary" id="claimBtn">Register this cylinder</button></div>`;
   }
   h += `<div class="card">
     <div class="row"><div class="lbl">Barcode</div><div class="val big">${esc(c.barcode)}</div><div class="lbl" style="margin-top:10px">Serial Number</div><div class="val">${esc(c.serial)}</div></div>
@@ -351,8 +352,8 @@ async function completeEmailLink(){
 /* ---------- claim ---------- */
 function openClaim(c){
   sheet(`<h3>Register cylinder ${esc(c.barcode)}</h3>
-    <p class="note">The claim code is on the card inside the cylinder.</p>
-    <div class="f"><label for="clCode">Claim code</label><input id="clCode" class="code" maxlength="8" autocomplete="off" autocapitalize="characters" spellcheck="false"></div>
+    <p class="note">If the filler has your email on file, just sign in with it and leave the code blank. Otherwise, use the claim code on the card inside the cylinder.</p>
+    <div class="f"><label for="clCode">Claim code (if you have one)</label><input id="clCode" class="code" maxlength="8" autocomplete="off" autocapitalize="characters" spellcheck="false"></div>
     <div class="f"><label for="clName">Your name (shows as Ownership)</label><input id="clName" maxlength="40" value="${esc(c.owner||"")}" autocomplete="name"></div>
     <div class="f"><label for="clLoc">Where will it live?</label><input id="clLoc" maxlength="60" value="${esc(c.location||"")}"></div>
     <p class="msg" id="clMsg"></p>
@@ -361,9 +362,9 @@ function openClaim(c){
     $("#clGo").onclick=()=>{
       const code=$("#clCode").value.trim().toUpperCase().replace(/[^A-Z0-9]/g,""), name=$("#clName").value.trim(), loc=$("#clLoc").value.trim(), m=$("#clMsg");
       m.className="msg err";
-      if(code.length<4){ m.textContent="Enter the claim code from inside the cylinder."; return; }
+      if(code && code.length<4){ m.textContent="Check the claim code. It's 6 letters and numbers."; return; }
       if(!name){ m.textContent="Enter your name."; return; }
-      const pending={bc:c.barcode, code, name, loc};
+      const pending={bc:c.barcode, code:code||"EMAIL", name, loc};
       if(!me){ $("#sheetRoot").innerHTML=""; return openSignIn(pending); }
       doClaim(pending, m, close);
     };
@@ -381,7 +382,7 @@ async function doClaim(p, m, close){
     ls.del("pendingClaim"); if(close) close(); else render();
   }catch(e){
     ls.del("pendingClaim");
-    const txt = e.code==="permission-denied" ? "That claim code doesn't match this cylinder. Check the card inside and try again." : "Couldn't register. Check your connection and try again.";
+    const txt = e.code==="permission-denied" ? (p.code==="EMAIL" ? "Your email isn't on file for this cylinder. Use the claim code from the card inside, or ask the filler to add your email." : "That claim code doesn't match this cylinder. Check the card inside and try again.") : "Couldn't register. Check your connection and try again.";
     if(m){ m.className="msg err"; m.textContent=txt; } else app.insertAdjacentHTML("afterbegin", `<p class="msg err">${txt}</p>`);
   }
 }
@@ -398,7 +399,8 @@ const todayISO=()=>{ const d=new Date(); return `${d.getFullYear()}-${String(d.g
 const lotFrom=(iso,ini)=>{ const m=(iso||"").match(/^(\d{4})-(\d{2})-(\d{2})$/); return m?`${m[2]}${m[3]}${m[1].slice(2)}${(ini||"").toUpperCase()}`:""; };
 function fillForm(){
   return `<h2>Fill a new cylinder</h2><form class="card" id="fill" novalidate>
-    <div class="f"><label for="fOwner">Recipient (Ownership)</label><input id="fOwner" maxlength="40"></div>
+    <div class="two"><div class="f"><label for="fOwner">Recipient (Ownership)</label><input id="fOwner" maxlength="40"></div>
+      <div class="f"><label for="fEmail">Recipient email (optional)</label><input id="fEmail" type="email" maxlength="80" autocomplete="off"></div></div>
     <div class="two"><div class="f"><label for="fBc">Barcode</label><input id="fBc" inputmode="numeric" maxlength="14"></div>
       <div class="f"><label for="fSn">Serial number</label><input id="fSn" maxlength="12"></div></div>
     <div class="two"><div class="f"><label for="fGas">Style</label><select id="fGas">${Object.keys(GASES).map(k=>`<option value="${k}">${gasInfo(k).cat}</option>`).join("")}</select></div>
@@ -431,6 +433,7 @@ function wireFill(){
     $("#fSave").disabled=true; m.className="msg"; m.textContent="Saving…";
     try{
       await setDoc(doc(db,"claims",`${bc}-${code}`),{barcode:bc, code, createdAt:at});
+      const em=$("#fEmail").value.trim().toLowerCase(); if(em) await setDoc(doc(db,"owners",bc),{email:em});
       await setDoc(doc(db,"cylinders",bc),{serial:sn, gas, owner, location:loc, contents, lot, fillDate:$("#fDate").value, status:"Delivered",
         ownerUid:null, claimCode:null, giftFrom:$("#fFrom").value.trim()||null, giftMessage:$("#fMsg").value.trim()||null,
         history:[{at, text:`Filled with ${contents}, ${GASES[gas].name} style (lot ${lot||"not set"}) and delivered to ${loc||"Not Set"}`}], createdAt:at, updatedAt:at});
@@ -454,12 +457,17 @@ async function renderLabel(){
   const qr = qrPng(link, 5);
   let known=ls.get("lastClaim:"+c.barcode);
   if(!known && !c.ownerUid){ try{ const qs=await getDocs(query(collection(db,"claims"),where("barcode","==",c.barcode))); known=qs.docs.map(d=>d.data().code).join(", ")||null; }catch(e){} }
+  let ownerEmail=""; try{ const os=await getDoc(doc(db,"owners",c.barcode)); if(os.exists()) ownerEmail=os.data().email||""; }catch(e){}
   if(view.name!=="label"||current!==c) return;
   app.innerHTML=`<h2>${esc(c.owner)} · ${esc(c.barcode)}</h2>
   <div class="card pad">
     <div class="qrbox"><img src="${qr.url}" alt="QR code for ${esc(c.barcode)}"><div><strong>QR sticker</strong><p class="note">${qr.inches} × ${qr.inches} in at 300 dpi. Opens ${esc(link)}</p>
       <p><a class="ghost" download="qr-${esc(c.serial||c.barcode)}-${esc(c.barcode)}.png" href="${qr.url}">Save QR image</a></p></div></div>
   </div>
+  <div class="card pad"><strong>Recipient email</strong>
+    <p class="note">Whoever signs in with this email can register the cylinder without a claim code. Only you can see it.</p>
+    <div class="f"><label for="oEmail">Email on file</label><input id="oEmail" type="email" value="${esc(ownerEmail)}"></div>
+    <div class="btns"><button class="ghost" id="oSave">Save email</button></div><p class="msg" id="oMsg"></p></div>
   <div class="card pad"><strong>Claim code</strong>
     ${c.ownerUid ? `<p class="note">Registered. The code is used up.</p><button class="ghost" id="unclaim">Unregister (new owner)</button>` :
       `<p class="note">Put this on a little card inside the cylinder. The recipient needs it to register.</p><div class="code" id="codeShow">${known?esc(known):"Hidden"}</div>
@@ -469,6 +477,9 @@ async function renderLabel(){
   if(nc) nc.onclick=async()=>{ const code=newClaim(); const m=$("#cMsg");
     try{ await setDoc(doc(db,"claims",`${c.barcode}-${code}`),{barcode:c.barcode, code, createdAt:new Date().toISOString()}); ls.set("lastClaim:"+c.barcode,code); $("#codeShow").textContent=code; m.className="msg ok"; m.textContent="New code saved. Older codes still work until the cylinder is registered."; }
     catch(e){ m.className="msg err"; m.textContent="Couldn't save the code."; } };
+  $("#oSave").onclick=async()=>{ const m=$("#oMsg"), v=$("#oEmail").value.trim().toLowerCase();
+    try{ await setDoc(doc(db,"owners",c.barcode),{email:v}); m.className="msg ok"; m.textContent=v?"Saved.":"Removed."; }
+    catch(e){ m.className="msg err"; m.textContent="Couldn't save. Check the database rules are the latest version."; } };
   const un=$("#unclaim");
   if(un) un.onclick=async()=>{ const m=$("#cMsg");
     try{ await updateDoc(doc(db,"cylinders",c.barcode),{ownerUid:null, claimCode:null, history:[...(c.history||[]),{at:new Date().toISOString(),text:"Unregistered by the filler"}]}); m.className="msg ok"; m.textContent="Unregistered. Make a new claim code for the next owner."; }

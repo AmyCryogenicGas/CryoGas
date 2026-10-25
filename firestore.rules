@@ -1,31 +1,42 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Replace with the same email you put in config.js
     function isAdmin() {
       return request.auth != null
-        && request.auth.token.email == 'PASTE_YOUR_EMAIL'
+        && request.auth.token.email == 'amy@metrowelding.com'
         && request.auth.token.email_verified == true;
     }
-    function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
+    function changed() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+    function hasClaimCode(bc) {
+      return exists(/databases/$(database)/documents/claims/$(bc + '-' + request.resource.data.claimCode));
+    }
+    function emailOnFile(bc) {
+      return request.auth.token.email_verified == true
+        && exists(/databases/$(database)/documents/owners/$(bc))
+        && get(/databases/$(database)/documents/owners/$(bc)).data.email == request.auth.token.email.lower();
+    }
 
     match /cylinders/{bc} {
       allow read: if true;
       allow create, delete: if isAdmin();
       allow update: if isAdmin()
-        // the registered owner can move, refill and restyle their own cylinder
         || (request.auth != null
             && resource.data.ownerUid == request.auth.uid
             && request.resource.data.ownerUid == resource.data.ownerUid
             && changed().hasOnly(['gas','location','contents','history','updatedAt']))
-        // anyone signed in can register an unregistered cylinder with its claim code
         || (request.auth != null
             && resource.data.ownerUid == null
             && request.resource.data.ownerUid == request.auth.uid
             && changed().hasOnly(['ownerUid','owner','location','claimCode','history','updatedAt'])
-            && exists(/databases/$(database)/documents/claims/$(bc + '-' + request.resource.data.claimCode)));
+            && (hasClaimCode(bc) || emailOnFile(bc)));
     }
+
     match /claims/{id} {
+      allow read, write: if isAdmin();
+    }
+    match /owners/{bc} {
       allow read, write: if isAdmin();
     }
   }
