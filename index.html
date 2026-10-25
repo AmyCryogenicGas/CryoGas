@@ -99,7 +99,7 @@ form.card,.pad{padding:18px 20px;display:flex;flex-direction:column;gap:14px}
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, onSnapshot, query, where, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getAuth, onAuthStateChanged, signInAnonymously, GoogleAuthProvider, signInWithPopup, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { firebaseConfig, ADMIN_EMAIL, BRAND } from "./config.js";
 import { SEED } from "./seed.js";
 
@@ -117,6 +117,12 @@ const fmt = iso => { try { return new Date(iso).toLocaleString(undefined,{month:
 const ls = { get:k=>{try{return localStorage.getItem(k)}catch(e){return null}}, set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}, del:k=>{try{localStorage.removeItem(k)}catch(e){}} };
 
 let me = null, isAdmin = false;
+const myLinks = new Set();   // barcodes this device/account is linked to
+async function checkLink(bc){
+  if (!me || !bc) return false;
+  try{ const s=await getDoc(doc(db,"links",`${me.uid}_${bc}`)); if(s.exists()){ myLinks.add(bc); return true; } }catch(e){}
+  return false;
+}
 let view = {name:"home"};
 let current = null, unsubCyl = null;
 let all = [], unsubAll = null;
@@ -144,6 +150,7 @@ function watchCylinder(){
   unsubCyl = onSnapshot(doc(db,"cylinders",bc), s => {
     current = s.exists() ? {...s.data(), barcode:bc} : {missing:true, barcode:bc};
     if (!$("#sheetRoot").innerHTML) render();
+    if (s.exists() && me && !myLinks.has(bc)) checkLink(bc).then(ok=>{ if(ok && !$("#sheetRoot").innerHTML) render(); });
   }, () => { current = {missing:true, barcode:bc}; render(); });
 }
 function watchAll(){
@@ -166,6 +173,7 @@ function render(){
   renderHome();
 }
 function acctLine(){
+  if (me && me.isAnonymous) return `<p class="acct"><button id="siBtn">Filler sign in</button></p>`;
   return `<p class="acct">${me ? `Signed in as ${esc(me.email||me.displayName||"you")} · <button id="soBtn">Sign out</button>` : `<button id="siBtn">Sign in</button>`}</p>`;
 }
 function wireAcct(){
@@ -177,7 +185,7 @@ function renderHome(){
   let h = `<div class="card pad"><p class="note" style="font-size:1rem;color:var(--fg)">Scan the QR code on a ${esc(BRAND)} cylinder with your phone camera, or tap the barcode button below to type its number.</p></div>`;
   if (isAdmin){
     const rows=[...all].sort((a,b)=>(a.owner||"").localeCompare(b.owner||""));
-    h += `<h2>Cylinders in the field</h2><div class="card list">${rows.length ? rows.map(c=>`<button data-bc="${esc(c.barcode)}"><span class="who">${esc(c.owner)}</span><span class="bc">${esc(c.barcode)}</span><span class="meta">${esc(gasInfo(c.gas).name)} PP · ${esc(c.location||"No location")} · ${c.ownerUid?"registered":"not registered"}</span></button>`).join("") : `<div class="empty">No cylinders yet. Add your first one below.</div>`}</div>`;
+    h += `<h2>Cylinders in the field</h2><div class="card list">${rows.length ? rows.map(c=>`<button data-bc="${esc(c.barcode)}"><span class="who">${esc(c.owner)}</span><span class="bc">${esc(c.barcode)}</span><span class="meta">${esc(gasInfo(c.gas).name)} PP · ${esc(c.location||"No location")} · ${c.registered?"registered":"not registered"}</span></button>`).join("") : `<div class="empty">No cylinders yet. Add your first one below.</div>`}</div>`;
     const missingSeed=SEED.filter(s=>!all.find(c=>c.barcode===s.barcode));
     if (missingSeed.length) h += `<div class="card pad"><strong>Starter cylinders</strong><p class="note">${missingSeed.length} cylinders from your first batch aren't loaded yet.</p><button class="primary" id="seedBtn">Load them</button><p class="msg" id="seedMsg"></p></div>`;
     h += fillForm();
@@ -196,7 +204,7 @@ function renderHome(){
         b.set(doc(db,"claims",`${sd.barcode}-${code}`),{barcode:sd.barcode, code, createdAt:at});
         const {barcode, email, ...rest}=sd;
         if (email) b.set(doc(db,"owners",barcode),{email:email.trim().toLowerCase()});
-        b.set(doc(db,"cylinders",barcode),{...rest, status:"Delivered", ownerUid:null, claimCode:null, giftFrom:null, giftMessage:null,
+        b.set(doc(db,"cylinders",barcode),{...rest, status:"Delivered", registered:false, giftFrom:null, giftMessage:null,
           history:[{at, text:`Filled with ${sd.contents}, ${GASES[sd.gas].name} style (lot ${sd.lot}) and delivered to ${sd.location}`}], createdAt:at, updatedAt:at});
       }
       await b.commit();
@@ -204,7 +212,7 @@ function renderHome(){
   };
   wireAcct();
 }
-const canEdit = c => isAdmin || (me && c.ownerUid===me.uid);
+const canEdit = c => isAdmin || myLinks.has(c.barcode);
 const field = (l,v) => `<div class="row"><div class="lbl">${l}</div><div class="val">${v}</div></div>`;
 
 function renderCyl(){
@@ -212,13 +220,13 @@ function renderCyl(){
   const c = current;
   if (!c || c.loading){ app.innerHTML=`<div class="card"><div class="empty">Looking up cylinder…</div></div>`; return; }
   if (c.missing){ app.innerHTML=`<div class="card"><div class="empty">No cylinder with barcode ${esc(c.barcode)} is in the system. Check the number under the bars and try again.</div></div>`+acctLine(); wireAcct(); return; }
-  const g = gasInfo(c.gas), ed = canEdit(c), unclaimed = !c.ownerUid;
+  const g = gasInfo(c.gas), ed = canEdit(c), unclaimed = !c.registered;
   let h = "";
   if (unclaimed && c.giftMessage){
     h += `<div class="tagcard"><span class="from">Delivery note${c.giftFrom?` from ${esc(c.giftFrom)}`:""}</span><blockquote>${esc(c.giftMessage)}</blockquote>${c.giftFrom?`<strong>— ${esc(c.giftFrom)}</strong>`:""}</div>`;
   }
   if (unclaimed && !isAdmin){
-    h += `<div class="card pad"><strong>This cylinder isn't registered yet.</strong><p class="note">If it's yours, tap Register. Sign in with the email the filler has on file, or use the claim code tucked inside. Then only you can move it, refill it or change its style.</p><button class="primary" id="claimBtn">Register this cylinder</button></div>`;
+    h += `<div class="card pad"><strong>This cylinder isn't registered yet.</strong><p class="note">If it's yours, tap Register and type the claim code from the card inside. No account or password needed. Then only you can move it, refill it or change its style.</p><button class="primary" id="claimBtn">Register this cylinder</button></div>`;
   }
   h += `<div class="card">
     <div class="row"><div class="lbl">Barcode</div><div class="val big">${esc(c.barcode)}</div><div class="lbl" style="margin-top:10px">Serial Number</div><div class="val">${esc(c.serial)}</div></div>
@@ -234,7 +242,7 @@ function renderCyl(){
     ${field("Volume/Weight","Not Set")}${field("Capacity","200")}${field("Cylinder Material","STEEL")}${field("Retest Date","Not Set")}${field("Valve Type","580")}
   </div>`;
   if (ed) h += `<div class="btns"><button class="primary" id="moveBtn2">Move cylinder</button><button class="ghost" id="fillBtn2">Refill</button>${isAdmin?`<button class="ghost" id="labelBtn">Label &amp; claim code</button>`:""}</div>`;
-  else if (!unclaimed) h += `<p class="note">Only ${esc(c.owner)} and the filler can change this cylinder.${me?"":" If this is yours, sign in below."}</p>`;
+  else if (!unclaimed && !isAdmin) h += `<div class="card pad"><p class="note">Only ${esc(c.owner)} and the filler can change this cylinder. If it's yours and you're on a new phone, enter your claim code again.</p><button class="ghost" id="claimBtn">Enter claim code</button></div>`;
   h += acctLine();
   app.innerHTML = h;
   $("#histBtn").onclick=()=>go({name:"hist",bc:c.barcode});
@@ -311,6 +319,21 @@ function openGas(c){
 }
 
 /* ---------- sign in ---------- */
+function authHelp(e, lead){
+  const c=(e&&e.code)||"unknown";
+  const tips={
+    "auth/unauthorized-domain":"This web address isn't on Firebase's Authorized domains list yet.",
+    "auth/unauthorized-continue-uri":"This web address isn't on Firebase's Authorized domains list yet.",
+    "auth/operation-not-allowed":"This sign-in method isn't switched on in Firebase Authentication.",
+    "auth/popup-blocked":"The browser blocked the Google window. Open this page in Safari or Chrome and try again.",
+    "auth/popup-closed-by-user":"The Google window closed before sign-in finished.",
+    "auth/web-storage-unsupported":"This browser is blocking storage. Open the page in Safari or Chrome.",
+    "auth/network-request-failed":"No connection. Check your signal and try again.",
+    "auth/invalid-email":"That email address doesn't look right.",
+    "auth/quota-exceeded":"Too many sign-in emails today. Try again tomorrow or use Google."
+  };
+  return `${lead} ${tips[c]||""} (${c})`;
+}
 function openSignIn(after){
   if (after) ls.set("pendingClaim", JSON.stringify(after));
   sheet(`<h3>Sign in</h3><p class="note">We'll email you a sign-in link. No password needed.</p>
@@ -327,9 +350,9 @@ function openSignIn(after){
         await sendSignInLinkToEmail(auth, em, {url: location.origin + location.pathname + (view.bc?`?c=${view.bc}`:""), handleCodeInApp:true});
         ls.set("emailForSignIn", em);
         m.className="msg ok"; m.textContent=`Check ${em} for the sign-in link. Open it on this phone.`;
-      }catch(e){ m.className="msg err"; m.textContent="Couldn't send the link. Check the address and try again."; }
+      }catch(e){ m.className="msg err"; m.textContent=authHelp(e, "Couldn't send the link."); }
     };
-    $("#siG").onclick=async()=>{ try{ await signInWithPopup(auth, new GoogleAuthProvider()); $("#sheetRoot").innerHTML=""; finishPending(); }catch(e){ $("#siMsg").className="msg err"; $("#siMsg").textContent="Google sign-in didn't finish. Try the email link instead."; } };
+    $("#siG").onclick=async()=>{ try{ await signInWithPopup(auth, new GoogleAuthProvider()); $("#sheetRoot").innerHTML=""; finishPending(); }catch(e){ $("#siMsg").className="msg err"; $("#siMsg").textContent=authHelp(e, "Google sign-in didn't finish."); } };
   });
 }
 async function completeEmailLink(){
@@ -352,8 +375,8 @@ async function completeEmailLink(){
 /* ---------- claim ---------- */
 function openClaim(c){
   sheet(`<h3>Register cylinder ${esc(c.barcode)}</h3>
-    <p class="note">If the filler has your email on file, just sign in with it and leave the code blank. Otherwise, use the claim code on the card inside the cylinder.</p>
-    <div class="f"><label for="clCode">Claim code (if you have one)</label><input id="clCode" class="code" maxlength="8" autocomplete="off" autocapitalize="characters" spellcheck="false"></div>
+    <p class="note">Type the 6-character claim code from the card inside the cylinder. Keep the card: you'll need the code again if you switch phones.</p>
+    <div class="f"><label for="clCode">Claim code</label><input id="clCode" class="code" maxlength="8" autocomplete="off" autocapitalize="characters" spellcheck="false"></div>
     <div class="f"><label for="clName">Your name (shows as Ownership)</label><input id="clName" maxlength="40" value="${esc(c.owner||"")}" autocomplete="name"></div>
     <div class="f"><label for="clLoc">Where will it live?</label><input id="clLoc" maxlength="60" value="${esc(c.location||"")}"></div>
     <p class="msg" id="clMsg"></p>
@@ -362,11 +385,16 @@ function openClaim(c){
     $("#clGo").onclick=()=>{
       const code=$("#clCode").value.trim().toUpperCase().replace(/[^A-Z0-9]/g,""), name=$("#clName").value.trim(), loc=$("#clLoc").value.trim(), m=$("#clMsg");
       m.className="msg err";
+      if(!code && !(me && !me.isAnonymous)){ m.textContent="Enter the claim code from the card inside the cylinder."; return; }
       if(code && code.length<4){ m.textContent="Check the claim code. It's 6 letters and numbers."; return; }
       if(!name){ m.textContent="Enter your name."; return; }
       const pending={bc:c.barcode, code:code||"EMAIL", name, loc};
-      if(!me){ $("#sheetRoot").innerHTML=""; return openSignIn(pending); }
-      doClaim(pending, m, close);
+      m.className="msg"; m.textContent="Registering…";
+      (async()=>{
+        try{ if(!me){ const cred=await signInAnonymously(auth); me=cred.user; } }
+        catch(e){ m.className="msg err"; m.textContent=authHelp(e,"Couldn't start registration."); return; }
+        doClaim(pending, m, close);
+      })();
     };
   });
 }
@@ -374,11 +402,14 @@ async function doClaim(p, m, close){
   const ref=doc(db,"cylinders",p.bc);
   try{
     const s=await getDoc(ref); if(!s.exists()) throw {code:"not-found"};
-    const c=s.data(); if(c.ownerUid){ if(m){ m.className="msg err"; m.textContent="This cylinder is already registered."; } return; }
+    const c=s.data();
+    await setDoc(doc(db,"links",`${me.uid}_${p.bc}`),{bc:p.bc, key:p.code});
+    myLinks.add(p.bc);
     const at=new Date().toISOString();
     const loc = p.loc || c.location || "";
-    const hist=[...(c.history||[]), {at, text:`Registered by ${p.name}${loc && loc!==c.location?`, moved to ${loc}`:""}`}];
-    await updateDoc(ref,{ownerUid:me.uid, owner:p.name, location:loc, claimCode:p.code, history:hist, updatedAt:at});
+    const first = !c.registered;
+    const hist=[...(c.history||[]), {at, text: first ? `Registered by ${p.name}${loc && loc!==c.location?`, moved to ${loc}`:""}` : `${p.name} linked another device`}];
+    await updateDoc(ref,{registered:true, owner:p.name, location:loc, history:hist, updatedAt:at});
     ls.del("pendingClaim"); if(close) close(); else render();
   }catch(e){
     ls.del("pendingClaim");
@@ -435,7 +466,7 @@ function wireFill(){
       await setDoc(doc(db,"claims",`${bc}-${code}`),{barcode:bc, code, createdAt:at});
       const em=$("#fEmail").value.trim().toLowerCase(); if(em) await setDoc(doc(db,"owners",bc),{email:em});
       await setDoc(doc(db,"cylinders",bc),{serial:sn, gas, owner, location:loc, contents, lot, fillDate:$("#fDate").value, status:"Delivered",
-        ownerUid:null, claimCode:null, giftFrom:$("#fFrom").value.trim()||null, giftMessage:$("#fMsg").value.trim()||null,
+        registered:false, giftFrom:$("#fFrom").value.trim()||null, giftMessage:$("#fMsg").value.trim()||null,
         history:[{at, text:`Filled with ${contents}, ${GASES[gas].name} style (lot ${lot||"not set"}) and delivered to ${loc||"Not Set"}`}], createdAt:at, updatedAt:at});
       ls.set("lastClaim:"+bc, code);
       go({name:"label",bc});
@@ -456,7 +487,7 @@ async function renderLabel(){
   const link = location.origin + location.pathname + "#" + c.barcode;
   const qr = qrPng(link, 5);
   let known=ls.get("lastClaim:"+c.barcode);
-  if(!known && !c.ownerUid){ try{ const qs=await getDocs(query(collection(db,"claims"),where("barcode","==",c.barcode))); known=qs.docs.map(d=>d.data().code).join(", ")||null; }catch(e){} }
+  if(!known){ try{ const qs=await getDocs(query(collection(db,"claims"),where("barcode","==",c.barcode))); known=qs.docs.map(d=>d.data().code).join(", ")||null; }catch(e){} }
   let ownerEmail=""; try{ const os=await getDoc(doc(db,"owners",c.barcode)); if(os.exists()) ownerEmail=os.data().email||""; }catch(e){}
   if(view.name!=="label"||current!==c) return;
   app.innerHTML=`<h2>${esc(c.owner)} · ${esc(c.barcode)}</h2>
@@ -469,25 +500,33 @@ async function renderLabel(){
     <div class="f"><label for="oEmail">Email on file</label><input id="oEmail" type="email" value="${esc(ownerEmail)}"></div>
     <div class="btns"><button class="ghost" id="oSave">Save email</button></div><p class="msg" id="oMsg"></p></div>
   <div class="card pad"><strong>Claim code</strong>
-    ${c.ownerUid ? `<p class="note">Registered. The code is used up.</p><button class="ghost" id="unclaim">Unregister (new owner)</button>` :
-      `<p class="note">Put this on a little card inside the cylinder. The recipient needs it to register.</p><div class="code" id="codeShow">${known?esc(known):"Hidden"}</div>
-       <button class="ghost" id="newCode">Make a new claim code</button>`}
+    <p class="note">${c.registered ? "Registered. The owner can re-enter this code to link a new phone." : "Put this on a little card inside the cylinder. The recipient types it in to register."}</p>
+    <div class="code" id="codeShow">${known?esc(known):"Hidden"}</div>
+    <div class="btns"><button class="ghost" id="newCode">Make a new claim code</button>${c.registered?`<button class="ghost" id="unclaim">Unregister (new owner)</button>`:""}</div>
     <p class="msg" id="cMsg"></p></div>`;
   const nc=$("#newCode");
   if(nc) nc.onclick=async()=>{ const code=newClaim(); const m=$("#cMsg");
-    try{ await setDoc(doc(db,"claims",`${c.barcode}-${code}`),{barcode:c.barcode, code, createdAt:new Date().toISOString()}); ls.set("lastClaim:"+c.barcode,code); $("#codeShow").textContent=code; m.className="msg ok"; m.textContent="New code saved. Older codes still work until the cylinder is registered."; }
+    try{ await setDoc(doc(db,"claims",`${c.barcode}-${code}`),{barcode:c.barcode, code, createdAt:new Date().toISOString()}); ls.set("lastClaim:"+c.barcode,code); $("#codeShow").textContent=code; m.className="msg ok"; m.textContent="New code saved. Older codes for this cylinder still work too."; }
     catch(e){ m.className="msg err"; m.textContent="Couldn't save the code."; } };
   $("#oSave").onclick=async()=>{ const m=$("#oMsg"), v=$("#oEmail").value.trim().toLowerCase();
     try{ await setDoc(doc(db,"owners",c.barcode),{email:v}); m.className="msg ok"; m.textContent=v?"Saved.":"Removed."; }
     catch(e){ m.className="msg err"; m.textContent="Couldn't save. Check the database rules are the latest version."; } };
   const un=$("#unclaim");
   if(un) un.onclick=async()=>{ const m=$("#cMsg");
-    try{ await updateDoc(doc(db,"cylinders",c.barcode),{ownerUid:null, claimCode:null, history:[...(c.history||[]),{at:new Date().toISOString(),text:"Unregistered by the filler"}]}); m.className="msg ok"; m.textContent="Unregistered. Make a new claim code for the next owner."; }
+    try{
+      const ls2=await getDocs(query(collection(db,"links"),where("bc","==",c.barcode)));
+      const qc=await getDocs(query(collection(db,"claims"),where("barcode","==",c.barcode)));
+      const b=writeBatch(db); ls2.docs.forEach(d=>b.delete(d.ref)); qc.docs.forEach(d=>b.delete(d.ref));
+      const code=newClaim(); b.set(doc(db,"claims",`${c.barcode}-${code}`),{barcode:c.barcode, code, createdAt:new Date().toISOString()});
+      b.update(doc(db,"cylinders",c.barcode),{registered:false, history:[...(c.history||[]),{at:new Date().toISOString(),text:"Unregistered by the filler"}]});
+      await b.commit(); ls.set("lastClaim:"+c.barcode, code);
+      m.className="msg ok"; m.textContent=`Unregistered. New claim code for the next owner: ${code}`; }
     catch(e){ m.className="msg err"; m.textContent="Couldn't unregister."; } };
 }
 
 /* ---------- boot ---------- */
 onAuthStateChanged(auth, u=>{
+  if (!u || (me && u.uid!==me.uid)) myLinks.clear();
   me=u; isAdmin = !!(u && u.email && u.emailVerified && u.email.toLowerCase()===ADMIN_EMAIL.toLowerCase());
   watchAll(); render(); finishPending();
 });
